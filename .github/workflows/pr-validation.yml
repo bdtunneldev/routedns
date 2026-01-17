@@ -1,0 +1,64 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate:
+    name: Validate PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check PR title format
+        run: |
+          TITLE="${{ github.event.pull_request.title }}"
+          # Check conventional commit format
+          if [[ ! "$TITLE" =~ ^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?\!?:\ .+ ]]; then
+            echo "❌ PR title doesn't follow conventional commits format"
+            echo "Expected: type(scope): description"
+            echo "Examples: feat: add new feature, fix(haproxy): resolve timeout issue"
+            exit 1
+          fi
+          echo "✅ PR title format is valid"
+
+      - name: Check for .env file
+        run: |
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q "^\.env$"; then
+            echo "❌ .env file should not be committed!"
+            exit 1
+          fi
+          echo "✅ No .env file in changes"
+
+      - name: Check for secrets in code
+        run: |
+          # Simple check for common secret patterns
+          if grep -rE "(password|secret|api_key|apikey|token)\s*=\s*['\"][^'\"]+['\"]" \
+            --include="*.yml" --include="*.yaml" --include="*.toml" --include="*.lua" \
+            --exclude-dir=.git . 2>/dev/null | grep -v "example\|template\|CHANGE_ME\|changeme"; then
+            echo "⚠️ Potential hardcoded secrets found. Please review."
+          fi
+          echo "✅ Secret check complete"
+
+  size-check:
+    name: PR Size Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check PR size
+        run: |
+          ADDITIONS=$(git diff --shortstat origin/${{ github.base_ref }}...HEAD | awk '{print $4}')
+          DELETIONS=$(git diff --shortstat origin/${{ github.base_ref }}...HEAD | awk '{print $6}')
+          TOTAL=$((${ADDITIONS:-0} + ${DELETIONS:-0}))
+          
+          echo "📊 PR Stats: +${ADDITIONS:-0} -${DELETIONS:-0} (total: $TOTAL lines)"
+          
+          if [ "$TOTAL" -gt 1000 ]; then
+            echo "⚠️ Large PR detected. Consider breaking into smaller PRs."
+          fi

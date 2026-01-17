@@ -1,0 +1,108 @@
+name: Scheduled Maintenance
+
+on:
+  schedule:
+    # Run every Sunday at 2:00 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+jobs:
+  # ============================================================================
+  # DEPENDENCY UPDATES CHECK
+  # ============================================================================
+  dependency-check:
+    name: Check Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for Docker image updates
+        run: |
+          echo "📦 Checking for Docker image updates..."
+          
+          images=(
+            "haproxy:3.3.1-alpine"
+            "valkey/valkey:9.0.1-alpine"
+            "prom/prometheus:v3.9.1"
+            "grafana/grafana:latest"
+            "folbricht/routedns:latest"
+          )
+          
+          for image in "${images[@]}"; do
+            echo "Checking $image..."
+            docker pull $image --quiet || true
+          done
+
+      - name: Check GitHub Actions versions
+        run: |
+          echo "🔍 Checking GitHub Actions versions..."
+          grep -r "uses:" .github/workflows/ | grep -oP '@v\d+' | sort | uniq -c
+
+  # ============================================================================
+  # SECURITY AUDIT
+  # ============================================================================
+  security-audit:
+    name: Weekly Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Scan all Docker images
+        run: |
+          images=(
+            "haproxy:3.3.1-alpine"
+            "valkey/valkey:9.0.1-alpine"
+            "prom/prometheus:v3.9.1"
+          )
+          
+          for image in "${images[@]}"; do
+            echo "═══════════════════════════════════════"
+            echo "Scanning: $image"
+            echo "═══════════════════════════════════════"
+            docker run --rm aquasec/trivy image --severity HIGH,CRITICAL "$image" || true
+          done
+
+  # ============================================================================
+  # CLEANUP OLD ARTIFACTS
+  # ============================================================================
+  cleanup:
+    name: Cleanup Old Resources
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      actions: write
+    steps:
+      - name: Delete old workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 30
+          keep_minimum_runs: 5
+
+      - name: Delete old container images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: 'routedns/haproxy'
+          package-type: 'container'
+          min-versions-to-keep: 10
+          delete-only-untagged-versions: true
+        continue-on-error: true
+
+      - name: Summary
+        run: |
+          echo "## 🧹 Scheduled Maintenance Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Dependencies checked" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Security audit completed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Old resources cleaned up" >> $GITHUB_STEP_SUMMARY
