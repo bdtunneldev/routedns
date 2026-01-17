@@ -9,9 +9,9 @@ USER root
 RUN apk update && apk add --no-cache \
     lua5.4=~5.4 \
     lua5.4-socket=~3.1 \
-    ca-certificates=~20241010 \
-    curl=~8.12 \
-    netcat-openbsd=~1.226
+    ca-certificates \
+    curl \
+    netcat-openbsd
 
 # Create necessary directories
 RUN mkdir -p /usr/local/etc/haproxy/certs \
