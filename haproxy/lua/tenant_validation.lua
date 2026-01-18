@@ -36,9 +36,9 @@ local CONFIG = {
     max_devices_per_tenant = 1,    -- Maximum allowed devices per tenant
     block_duration = 1800,         -- 30 minutes block for violators
     -- Valkey configuration - using Docker service name
-    valkey_host = os.getenv("VALKEY_HOST"),
-    valkey_port = 6379,
-    valkey_timeout = 1000,  -- milliseconds
+    valkey_host = os.getenv("VALKEY_HOST") or "valkey",
+    valkey_port = tonumber(os.getenv("VALKEY_PORT") or "6379"),
+    valkey_timeout = tonumber(os.getenv("VALKEY_TIMEOUT_MS") or "1000"),  -- milliseconds
     valkey_db = 0,
     valkey_password = os.getenv("VALKEY_PASSWORD"),
 }
@@ -154,18 +154,22 @@ end
 -- Authenticate with Valkey
 local function valkey_auth(conn)
     local password = CONFIG.valkey_password
+    if not password or password == "" then
+        return nil, "empty_password"
+    end
+
     local cmd = "*2\r\n$4\r\nAUTH\r\n$" .. #password .. "\r\n" .. password .. "\r\n"
-    
+
     local response, err = valkey_send_raw(conn, cmd)
     if err then
         return nil, err
     end
-    
+
     local result, parse_err = parse_resp(response)
     if parse_err then
         return nil, parse_err
     end
-    
+
     return result == "OK", nil
 end
 
@@ -181,6 +185,16 @@ local function get_valkey_connection()
     -- Try to reuse existing connection
     if valkey_pool.conn and valkey_authenticated then
         return valkey_pool.conn
+    end
+
+    if not CONFIG.valkey_host or CONFIG.valkey_host == "" then
+        core.log(core.err, "[tenant-valkey] VALKEY_HOST is not set")
+        return nil
+    end
+
+    if not CONFIG.valkey_port then
+        core.log(core.err, "[tenant-valkey] VALKEY_PORT is not set")
+        return nil
     end
     
     -- Create new TCP connection to Valkey using core.tcp()
@@ -678,6 +692,7 @@ end)
 core.log(core.info, "[tenant] ═══════════════════════════════════════════════════")
 core.log(core.info, "[tenant] Lua validation script loaded (HAProxy 3.3+ HTTPS)")
 core.log(core.info, "[tenant] API: " .. CONFIG.api_base)
+core.log(core.info, "[tenant] Valkey: " .. tostring(CONFIG.valkey_host) .. ":" .. tostring(CONFIG.valkey_port) .. " (timeout " .. tostring(CONFIG.valkey_timeout) .. "ms)")
 core.log(core.info, "[tenant] Cache TTL: " .. CONFIG.cache_ttl .. "s (valid), " .. CONFIG.negative_cache_ttl .. "s (invalid)")
 core.log(core.info, "[tenant] Device limit: " .. CONFIG.max_devices_per_tenant .. " device(s) per tenant")
 core.log(core.info, "[tenant] Block duration: " .. CONFIG.block_duration .. "s")
