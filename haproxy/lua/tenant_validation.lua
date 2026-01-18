@@ -37,25 +37,31 @@ local CONFIG = {
     block_duration = 1800,         -- 30 minutes block for violators
     -- Valkey configuration - using Docker service name
     valkey_host = os.getenv("VALKEY_HOST") or "valkey",
-    valkey_port = (function()
-        local port_str = os.getenv("VALKEY_PORT")
-        if port_str and port_str ~= "" then
-            return tonumber(port_str) or 6379
-        else
-            return 6379
-        end
-    end)(),
-    valkey_timeout = (function()
-        local timeout_str = os.getenv("VALKEY_TIMEOUT_MS")
-        if timeout_str and timeout_str ~= "" then
-            return tonumber(timeout_str) or 1000
-        else
-            return 1000
-        end
-    end)(),  -- milliseconds
     valkey_db = 0,
     valkey_password = os.getenv("VALKEY_PASSWORD"),
 }
+
+-- Initialize and validate Valkey port separately to ensure it's always valid
+do
+    local port_str = os.getenv("VALKEY_PORT") or "6379"
+    local port_num = tonumber(port_str)
+    if not port_num or port_num <= 0 or port_num > 65535 then
+        CONFIG.valkey_port = 6379
+    else
+        CONFIG.valkey_port = port_num
+    end
+end
+
+-- Initialize and validate Valkey timeout
+do
+    local timeout_str = os.getenv("VALKEY_TIMEOUT_MS")
+    if timeout_str and timeout_str ~= "" then
+        local timeout_num = tonumber(timeout_str)
+        CONFIG.valkey_timeout = timeout_num and timeout_num > 0 and timeout_num or 1000
+    else
+        CONFIG.valkey_timeout = 1000
+    end
+end
 
 -------------------------------------------------------------------------------
 -- VALKEY CONNECTION POOL
