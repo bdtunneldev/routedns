@@ -37,8 +37,8 @@ local CONFIG = {
     block_duration = 1800,         -- 30 minutes block for violators
     -- Valkey configuration - using Docker service name
     valkey_host = os.getenv("VALKEY_HOST") or "valkey",
-    valkey_port = tonumber(os.getenv("VALKEY_PORT") or "6379"),
-    valkey_timeout = tonumber(os.getenv("VALKEY_TIMEOUT_MS") or "1000"),  -- milliseconds
+    valkey_port = tonumber(os.getenv("VALKEY_PORT")) or 6379,
+    valkey_timeout = tonumber(os.getenv("VALKEY_TIMEOUT_MS")) or 1000,  -- milliseconds
     valkey_db = 0,
     valkey_password = os.getenv("VALKEY_PASSWORD"),
 }
@@ -192,8 +192,9 @@ local function get_valkey_connection()
         return nil
     end
 
-    if not CONFIG.valkey_port then
-        core.log(core.err, "[tenant-valkey] VALKEY_PORT is not set")
+    local port = math.floor(tonumber(CONFIG.valkey_port) or 0)
+    if port <= 0 then
+        core.log(core.err, "[tenant-valkey] VALKEY_PORT is invalid: " .. tostring(CONFIG.valkey_port))
         return nil
     end
     
@@ -209,9 +210,10 @@ local function get_valkey_connection()
     conn:settimeout(CONFIG.valkey_timeout / 1000)
     
     -- Connect to Valkey
-    local ok, err = conn:connect(CONFIG.valkey_host, CONFIG.valkey_port)
+    -- Use IP if possible, or ensure hostname is clean
+    local ok, err = conn:connect(CONFIG.valkey_host, port)
     if not ok then
-        core.log(core.warning, "[tenant-valkey] Connection failed to " .. CONFIG.valkey_host .. ":" .. CONFIG.valkey_port .. " - " .. tostring(err))
+        core.log(core.warning, "[tenant-valkey] Connection failed to " .. CONFIG.valkey_host .. ":" .. port .. " - " .. tostring(err))
         return nil
     end
     
